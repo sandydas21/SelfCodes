@@ -1,0 +1,127 @@
+WITH T1 AS
+(SELECT
+ORGNAME,Warehouse,Ship_Method,Sort_Code,Dest_Warehouse_Id,Ship_OptionGroup_Name,
+Previous_PickupTime,Pickup_Time,Constraint_Type,Cap_Type,
+Cap_Hit,Cap_Utilization,Configured_Cap,Acs2_Schedule_Count,Acs2_Slam_Count
+from
+(
+SELECT
+NULL AS ORGNAME,
+cp.warehouse_id as Warehouse,
+ship_method as Ship_Method,
+internal_sort_code as Sort_Code,
+destination_warehouse_id as Dest_Warehouse_Id,
+ship_option_group_name as Ship_OptionGroup_Name,
+convert_timezone('UTC+5:30','UTC',cap_interval_start) as Previous_PickupTime,
+convert_timezone('UTC+5:30','UTC',cap_interval_end) as Pickup_Time,
+cap_measurement_type as Constraint_Type,
+cap_type as Cap_Type,
+case when (VALUE > 0 AND post_slam >= value) then 'true' else 'false' end as Cap_Hit,
+((post_slam+pre_slam)/(case when value = 0 then 1 else value end))*100.00 as Cap_Utilization,
+value as Configured_Cap,
+pre_slam as Acs2_Schedule_Count,
+post_slam as Acs2_Slam_Count,
+row_number() over (partition by cp.warehouse_id,ship_method,internal_sort_code,destination_warehouse_id,ship_option_group_name,cap_interval_start, cap_interval_end,cap_measurement_type,cap_type ORDER BY snapshot_creation_date desc) as rno
+from A cp
+left join B dws
+on cp.warehouse_id = dws.warehouse_id
+where
+snapshot_creation_date > (Select dateadd(m,-60,max(snapshot_creation_date)) as snapshot_creation_date from SCAP_LIVE.V_PICKUP_BASED_CAPS_HOURLY) 
+and 
+(
+ship_method in ('ATS_LH','ATS_LINEHAUL_HAZMAT','ATS_LH_SAME','ATS_GROUND','ATS_LINEHAUL_SD','ATS_RAIL','ATS_RAIL_EXP','ATS_AH','ATS_AIR_STD','ATS_SORT'
+                   ,'ATS_LINEHAUL_HB','BLUEDART_GROUND_HB_STD','BLUEDART_GROUND_HB_STD_COD','DLV_GROUND_HB_STD','DLV_GROUND_HB_STD_COD','ATS_AH_AA', 'ATS_SORT_FC', 'ATS_SORT_NONCON')
+OR
+internal_sort_code in ('BD_SB_REG_AHMEDABAD','BD_SB_REG_BANGALORE','BD_SB_REG_BHOPAL','BD_SB_REG_CHENNAI','BD_SB_REG_COIMBATORE','BD_SB_REG_DELHI','BD_SB_REG_GUWAHATI','BD_SB_REG_HYDERABAD','BD_SB_REG_KOLKATA','BD_SB_REG_LUCKNOW','BD_SB_REG_LUDHIANA','BD_SB_REG_MUMBAI','BD_SB_REG_PATNA','DLV_MPS_NATIONAL','DLV_MPS_REG_BANGALORE','DLV_MPS_REG_CHENNAI','DLV_MPS_REG_DELHI','DLV_MPS_REG_HYDERABAD','DLV_MPS_REG_KOLKATA','DLV_MPS_REG_MUMBAI','DLV_SB_NATIONAL','DLV_SB_REG_AHMEDABAD','DLV_SB_REG_BANGALORE','DLV_SB_REG_BHOPAL','DLV_SB_REG_CHENNAI','DLV_SB_REG_COIMBATORE','DLV_SB_REG_DELHI','DLV_SB_REG_GUWAHATI','DLV_SB_REG_HYDERABAD','DLV_SB_REG_KOLKATA','DLV_SB_REG_LUCKNOW','DLV_SB_REG_LUDHIANA','DLV_SB_REG_MUMBAI','DLV_SB_REG_PATNA','DLV_SB_REG_PUNE')
+)
+)
+WHERE RNO = 1
+AND Pickup_Time >= dateadd(m,330,getdate())
+),
+T2 AS(
+SELECT T1.*,
+CASE WHEN T1.warehouse='BLX1' THEN 1.3768901869924
+WHEN T1.warehouse='SAME' THEN 1.26704545454545
+WHEN T1.warehouse='SATB' THEN 1.5180195885765
+WHEN T1.warehouse='SBHF' THEN 1.41920204044453
+WHEN T1.warehouse='SBOB' THEN 1.220295375731
+WHEN T1.warehouse='SCCE' THEN 1.46434004982901
+WHEN T1.warehouse='SCJF' THEN 1.37918937296136
+WHEN T1.warehouse='SDEB' THEN 1.45041556182072
+WHEN T1.warehouse='SDEG' THEN 1.20855714021115
+WHEN T1.warehouse='SGAC' THEN 1.3999142541237
+WHEN T1.warehouse='SHYB' THEN 1.22001340512194
+WHEN T1.warehouse='SHYH' THEN 1.36305212631223
+WHEN T1.warehouse='SLKD' THEN 1.35515763567701
+WHEN T1.warehouse='SPAB' THEN 1.25328083989501
+WHEN T1.warehouse='XECP' THEN 1.17738454898576
+WHEN T1.warehouse='XSAJ' THEN 1.12727272727273
+WHEN T1.warehouse='XWAA' THEN 1.08333333333333
+WHEN T1.warehouse='HSCB' THEN 1.3768901869924
+WHEN T1.warehouse='HAME' THEN 1.26704545454545
+WHEN T1.warehouse='HATB' THEN 1.5180195885765
+WHEN T1.warehouse='HBHF' THEN 1.41920204044453
+WHEN T1.warehouse='HBOB' THEN 1.220295375731
+WHEN T1.warehouse='HCCE' THEN 1.46434004982901
+WHEN T1.warehouse='HCJF' THEN 1.37918937296136
+WHEN T1.warehouse='HDEB' THEN 1.45041556182072
+WHEN T1.warehouse='HDEG' THEN 1.20855714021115
+WHEN T1.warehouse='HGAB' THEN 1.3999142541237
+WHEN T1.warehouse='HSCH' THEN 1.22001340512194
+WHEN T1.warehouse='HHYH' THEN 1.36305212631223
+WHEN T1.warehouse='HLKD' THEN 1.35515763567701
+WHEN T1.warehouse='HPAB' THEN 1.25328083989501
+WHEN T1.warehouse='OECP' THEN 1.17738454898576
+WHEN T1.warehouse='OSAJ' THEN 1.12727272727273
+WHEN T1.warehouse='OWAA' THEN 1.08333333333333
+ELSE 1.25
+END AS Unit_Factor,
+CASE WHEN T1.warehouse='BLX1' THEN 8.67835085956528
+WHEN T1.warehouse='SAME' THEN 8.55060612526481
+WHEN T1.warehouse='SATB' THEN 8.77621679364865
+WHEN T1.warehouse='SBHF' THEN 8.83810748215663
+WHEN T1.warehouse='SBOB' THEN 8.04851241431706
+WHEN T1.warehouse='SCCE' THEN 8.09204696679491
+WHEN T1.warehouse='SCJF' THEN 8.47165374731117
+WHEN T1.warehouse='SDEB' THEN 8.56671739856271
+WHEN T1.warehouse='SDEG' THEN 8.97696295557166
+WHEN T1.warehouse='SGAC' THEN 6.54635374403481
+WHEN T1.warehouse='SHYB' THEN 8.03138167827991
+WHEN T1.warehouse='SHYH' THEN 6.54889011761892
+WHEN T1.warehouse='SLKD' THEN 8.79756355946897
+WHEN T1.warehouse='SPAB' THEN 8.84601237339392
+WHEN T1.warehouse='XECP' THEN 10.9156079212039
+WHEN T1.warehouse='XSAJ' THEN 7.13593659601267
+WHEN T1.warehouse='XWAA' THEN 8.07277713710989
+WHEN T1.warehouse='HSCB' THEN 8.67835085956528
+WHEN T1.warehouse='HAME' THEN 8.55060612526481
+WHEN T1.warehouse='HATB' THEN 8.77621679364865
+WHEN T1.warehouse='HBHF' THEN 8.83810748215663
+WHEN T1.warehouse='HBOB' THEN 8.04851241431706
+WHEN T1.warehouse='HCCE' THEN 8.09204696679491
+WHEN T1.warehouse='HCJF' THEN 8.47165374731117
+WHEN T1.warehouse='HDEB' THEN 8.56671739856271
+WHEN T1.warehouse='HDEG' THEN 8.97696295557166
+WHEN T1.warehouse='HGAB' THEN 6.54635374403481
+WHEN T1.warehouse='HSCH' THEN 8.03138167827991
+WHEN T1.warehouse='HHYH' THEN 6.54889011761892
+WHEN T1.warehouse='HLKD' THEN 8.79756355946897
+WHEN T1.warehouse='HPAB' THEN 8.84601237339392
+WHEN T1.warehouse='OECP' THEN 10.9156079212039
+WHEN T1.warehouse='OSAJ' THEN 7.13593659601267
+WHEN T1.warehouse='OWAA' THEN 8.07277713710989
+ELSE 8.5
+END AS CFT_Average
+FROM T1 
+--WHERE Warehouse IN(SELECT node FROM config.node_master WHERE type='AMXL FC') 
+--AND CAP_TYPE='MONITOR'
+),
+T3 AS(
+SELECT T2.*,b.TYPE
+FROM T2
+LEFT JOIN config.node_master b
+ON T2.Warehouse=b.node
+)
+
+SELECT *
+FROM T3
