@@ -1,0 +1,77 @@
+with dosp_returns as
+(
+select shipper_id as tracking_id,sum(unit_count) as units
+from A
+where 
+ship_day between CURRENT_DATE - 800 AND CURRENT_DATE
+and ship_method in ('ATS_INJ_GRD_STD','ATS_SELLER')
+group by shipper_id
+),
+
+square_off_raw as
+(
+SELECT a.tracking_id
+	,a.source_node
+	,a.dest_node
+	,a.type
+	,a.vrid
+	,a.sent_on
+	,a.sent_on_day
+	,a.received_on
+	,a.carrier
+FROM (
+	SELECT sat.id::VARCHAR(64) AS tracking_id
+		,COALESCE(sat.sourcenode, sat.currentnode)::VARCHAR(16) AS source_node
+		,COALESCE(sat.destinationnode, sat.currentnode)::VARCHAR(16) AS dest_node
+		,sat.type::VARCHAR(64) AS type
+		,(timestamptz 'epoch' + (decode(sat.creationtime,0,null,sat.creationtime) / 1000) * interval '1 second') AT TIME zone 'Asia/Kolkata' AS creation_time
+		,(timestamptz 'epoch' + (decode(sat.lastupdatedtime,0,null,sat.lastupdatedtime)/ 1000) * interval '1 second') AT TIME zone 'Asia/Kolkata' AS last_updated_time
+		,(timestamptz 'epoch' + (decode(sat.senton,0,null,sat.senton)/ 1000) * interval '1 second') AT TIME zone 'Asia/Kolkata' AS sent_on
+		,TRIM(TO_CHAR((timestamptz 'epoch' + (decode(senton,0,null,senton)/ 1000) * interval '1 second') AT TIME zone 'Asia/Kolkata','Day')) AS sent_on_day
+		,(timestamptz 'epoch' + (decode(sat.receivedon,0,null,sat.receivedon) / 1000) * interval '1 second') AT TIME zone 'Asia/Kolkata' AS received_on
+		,sat.carrier::VARCHAR(64) as carrier
+		,sat.groupid::VARCHAR(64) as VRID
+		,ROW_NUMBER() OVER (
+			PARTITION BY sat.id ORDER BY sat.lastupdatedtime DESC, sat.creationtime DESC
+			) AS rn
+	FROM B sat
+	WHERE	
+	
+		sent_on is not null
+		and COALESCE(sat.destinationnode, sat.currentnode)::VARCHAR(16) in (select distinct node from config.node_master where type in ('FC','EFP'))
+	) a
+WHERE a.rn = 1 and sent_on between CURRENT_DATE - 800 and CURRENT_DATE + 1
+),
+
+T1 AS(
+select 
+sent_on,Trunc(date_trunc('week',trunc(sent_on)+1)-1) as week_begin_on,source_node,dest_node,type,vrid,carrier,
+case when dr.tracking_id is NULL then 'Default' else 'Actual' end as units_flag,
+count(distinct sr.tracking_id) as shipments,
+sum(case when dr.tracking_id is NULL then 1 else dr.units end) as units
+from square_off_raw sr
+left join dosp_returns dr on sr.tracking_id = dr.tracking_id
+where type in ('Regular')
+group by 1,2,3,4,5,6,7,8
+),
+T2 AS
+(
+SELECT dest_node AS destination_node,
+units,
+trunc(sent_on) AS date,
+CASE WHEN units IS NOT NULL THEN 'Actual_Units' ELSE 'NA' END AS Identifier
+FROM T1
+),
+T3 AS
+(
+select fc  AS destination_node,forecast as units,forecast_date as date,
+CASE WHEN forecast IS NOT NULL THEN 'Forecast_Units' ELSE 'NA' END AS Identifier
+from C
+where forecast_date between current_date -800 and current_date
+)
+
+SELECT *
+FROM T2
+UNION ALL
+SELECT *
+FROM T3
